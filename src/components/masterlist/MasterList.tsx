@@ -105,15 +105,7 @@ type HeadUnitFilter = typeof headUnitFilters[number]['value']
 
 const divisionOf = (unit: string) => divisions.find((division) => division.units.includes(unit))?.title ?? ''
 
-export const personnel: Personnel[] = [
-  { id: '2024-001', name: 'LACAR, JOHN GABRIEL M.', position: 'Computer Operator II', assignment: 'PERSONNEL SECTION', birthdate: 'NOVEMBER 24, 2002', sg: '9', dateOfEntry: 'SEPTEMBER 17, 2026', eligibility: 'CS PROF', fundSource: 'GMS COS', email: 'lacar.johngabriel1@gmail.com', contact: '09917729314', sex: 'G', unit: directorUnits[0], employmentType: 'Regular' },
-  { id: '2024-002', name: 'SANTOS, MARIA LOURDES P.', position: 'ADMINISTRATIVE OFFICER III', assignment: 'ADMINISTRATIVE SECTION', birthdate: 'MARCH 08, 1988', sg: '14', dateOfEntry: 'JUNE 12, 2015', eligibility: 'CS PROF', fundSource: 'GAA', email: 'santos.maria@doh.gov.ph', contact: '09171234567', sex: 'F', unit: directorUnits[1], employmentType: 'Regular' },
-  { id: '2024-003', name: 'REYES, CARLOS MIGUEL D.', position: 'HEALTH PROGRAM OFFICER II', assignment: 'HEALTH PROGRAMS', birthdate: 'JULY 19, 1991', sg: '15', dateOfEntry: 'AUGUST 03, 2018', eligibility: 'CS PROF', fundSource: 'GAA', email: 'reyes.carlos@doh.gov.ph', contact: '09201234567', sex: 'M', unit: directorUnits[2], employmentType: 'Regular' },
-  { id: '2024-004', name: 'CRUZ, ANGELICA T.', position: 'NURSE II', assignment: 'HEALTH SERVICES', birthdate: 'JANUARY 14, 1994', sg: '15', dateOfEntry: 'OCTOBER 21, 2019', eligibility: 'RA 1080', fundSource: 'GAA', email: 'cruz.angelica@doh.gov.ph', contact: '09391234567', sex: 'F', unit: directorUnits[6], employmentType: 'Regular' },
-  { id: 'COS-001', name: 'GARCIA, ROBERTO S.', position: 'ADMINISTRATIVE AIDE VI', assignment: 'RECORDS SECTION', birthdate: 'DECEMBER 05, 1990', sg: '6', dateOfEntry: 'JANUARY 08, 2026', eligibility: 'NONE', fundSource: 'GMS COS', email: 'garcia.roberto@doh.gov.ph', contact: '09481234567', sex: 'M', unit: directorUnits[8], employmentType: 'Contract of Service' },
-  { id: 'COS-002', name: 'MENDOZA, JANELLE R.', position: 'DATA ENCODER', assignment: 'PLANNING SECTION', birthdate: 'MAY 27, 1996', sg: '4', dateOfEntry: 'FEBRUARY 15, 2026', eligibility: 'NONE', fundSource: 'GMS COS', email: 'mendoza.janelle@doh.gov.ph', contact: '09551234567', sex: 'F', unit: directorUnits[5], employmentType: 'Contract of Service' },
-  { id: 'COS-003', name: 'FLORES, PAOLO N.', position: 'DRIVER', assignment: 'GENERAL SERVICES', birthdate: 'SEPTEMBER 30, 1985', sg: '4', dateOfEntry: 'MARCH 02, 2026', eligibility: 'DRIVER LICENSE', fundSource: 'GMS COS', email: 'flores.paolo@doh.gov.ph', contact: '09661234567', sex: 'M', unit: directorUnits[10], employmentType: 'Contract of Service' },
-]
+export const personnel: Personnel[] = []
 
 // Columns shown in the table. Fixed widths (px) keep the header and every row aligned.
 export const columns: Array<{ key: keyof Personnel | 'action'; label: string; width: number }> = [
@@ -131,7 +123,7 @@ export const columns: Array<{ key: keyof Personnel | 'action'; label: string; wi
 
 export const tableMinWidth = columns.reduce((sum, column) => sum + column.width, 0)
 
-const groups = ['Regular', 'Contract of Service'] as const
+const groups = ['Contract of Service', 'Regular'] as const
 
 /* ───────────────────────────── Search ───────────────────────────── */
 
@@ -335,13 +327,44 @@ export function PersonnelDetails({ person, onClose }: { person: Personnel; onClo
 /* ─────────────── One unit (e.g. "Personnel Section") ─────────────── */
 
 const allUnits = divisions.flatMap((division) => division.units)
+const personnelUnitOptions = [
+  'Office of the Director',
+  'Management Support Division',
+  'Local Health Support Division',
+  'Regulations, Licensing and Enforcement Division',
+  'PDOHO',
+  'Data Encoder',
+  'GIP',
+  'OJT',
+]
+const sexOptions = ['Male', 'Female']
 
-function AddPersonnel({ onAdd, onClose }: { onAdd: (person: Personnel) => void; onClose: () => void }) {
+function formatDateInput(value: string) {
+  const digits = value.replace(/\D/g, '').slice(0, 8)
+  if (digits.length <= 2) return digits
+  if (digits.length <= 4) return `${digits.slice(0, 2)}/${digits.slice(2)}`
+  return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`
+}
+
+function isValidDateInput(value: string) {
+  const match = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(value)
+  if (!match) return false
+  const [, monthText, dayText, yearText] = match
+  const month = Number(monthText)
+  const day = Number(dayText)
+  const year = Number(yearText)
+  const date = new Date(year, month - 1, day)
+  return year > 0 && date.getFullYear() === year && date.getMonth() === month - 1 && date.getDate() === day
+}
+
+function AddPersonnel({ onAdd, onClose }: { onAdd: (person: Personnel) => Promise<void>; onClose: () => void }) {
   const [form, setForm] = useState<Personnel>({
     id: '', name: '', position: '', assignment: '', birthdate: '', sg: '', dateOfEntry: '',
     eligibility: '', fundSource: '', tinNo: '', sssNo: '', philhealthNo: '', gsisNo: '',
-    email: '', contact: '', sex: '', unit: allUnits[0], employmentType: 'Regular',
+    email: '', contact: '', sex: '', unit: allUnits[0], employmentType: 'Contract of Service',
   })
+  const [error, setError] = useState('')
+  const [saving, setSaving] = useState(false)
 
   const update = (field: keyof Personnel, value: string) => {
     setForm((current) => ({ ...current, [field]: value }))
@@ -363,12 +386,25 @@ function AddPersonnel({ onAdd, onClose }: { onAdd: (person: Personnel) => void; 
     { key: 'gsisNo', label: 'GSIS No. (Regular only)' },
     { key: 'email', label: 'Email Address' },
     { key: 'contact', label: 'Contact Number' },
-    { key: 'sex', label: 'Sex' },
   ]
 
-  const submit = (event: FormEvent<HTMLFormElement>) => {
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    onAdd({ ...form, gsisNo: form.employmentType === 'Regular' ? form.gsisNo : undefined })
+    setError('')
+    for (const [label, value] of [['Birthdate', form.birthdate], ['Date of Entry', form.dateOfEntry]]) {
+      if (value && !isValidDateInput(value)) {
+        setError(`${label} must be a valid date in MM/DD/YYYY format.`)
+        return
+      }
+    }
+    setSaving(true)
+    try {
+      await onAdd({ ...form, gsisNo: form.employmentType === 'Regular' ? form.gsisNo : undefined })
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Unable to save personnel.')
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
@@ -378,13 +414,21 @@ function AddPersonnel({ onAdd, onClose }: { onAdd: (person: Personnel) => void; 
           <h2 className="text-xl font-extrabold uppercase">Add Personnel</h2>
           <button type="button" onClick={onClose} aria-label="Close add personnel form" className="rounded-md px-2 text-2xl leading-none text-green-100 hover:bg-white/10 hover:text-white">&times;</button>
         </div>
+        {error && <p role="alert" className="px-6 pt-4 text-sm text-red-700">{error}</p>}
         <div className="grid gap-x-6 gap-y-4 px-6 py-6 sm:grid-cols-2">
           {textFields.map((field) => (
             <label key={field.key} className="text-[10px] font-bold uppercase tracking-wide text-slate-600">
               {field.label}
-              <input type="text" value={String(form[field.key] ?? '')} onChange={(event) => update(field.key, event.target.value)} required={field.required} className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm font-normal normal-case text-slate-900 outline-none focus:border-green-700 focus:ring-2 focus:ring-green-100" />
+              <input type="text" value={String(form[field.key] ?? '')} onChange={(event) => update(field.key, field.key === 'birthdate' || field.key === 'dateOfEntry' ? formatDateInput(event.target.value) : event.target.value)} required={field.required} inputMode={field.key === 'birthdate' || field.key === 'dateOfEntry' ? 'numeric' : undefined} maxLength={field.key === 'birthdate' || field.key === 'dateOfEntry' ? 10 : undefined} placeholder={field.key === 'birthdate' || field.key === 'dateOfEntry' ? 'MM/DD/YYYY' : undefined} pattern={field.key === 'birthdate' || field.key === 'dateOfEntry' ? '(0[1-9]|1[0-2])/(0[1-9]|[12][0-9]|3[01])/[0-9]{4}' : undefined} className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm font-normal normal-case text-slate-900 outline-none focus:border-green-700 focus:ring-2 focus:ring-green-100" />
             </label>
           ))}
+          <label className="text-[10px] font-bold uppercase tracking-wide text-slate-600">
+            Sex
+            <select value={form.sex} onChange={(event) => update('sex', event.target.value)} className="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-normal normal-case text-slate-900 outline-none focus:border-green-700 focus:ring-2 focus:ring-green-100">
+              <option value="">Select sex</option>
+              {sexOptions.map((sex) => <option key={sex} value={sex}>{sex}</option>)}
+            </select>
+          </label>
           <label className="text-[10px] font-bold uppercase tracking-wide text-slate-600">
             Employment Type
             <select value={form.employmentType} onChange={(event) => update('employmentType', event.target.value)} className="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-normal normal-case text-slate-900 outline-none focus:border-green-700 focus:ring-2 focus:ring-green-100">
@@ -394,13 +438,13 @@ function AddPersonnel({ onAdd, onClose }: { onAdd: (person: Personnel) => void; 
           <label className="text-[10px] font-bold uppercase tracking-wide text-slate-600">
             Unit
             <select value={form.unit} onChange={(event) => update('unit', event.target.value)} className="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-normal normal-case text-slate-900 outline-none focus:border-green-700 focus:ring-2 focus:ring-green-100">
-              {allUnits.map((unit) => <option key={unit} value={unit}>{unit}</option>)}
+              {personnelUnitOptions.map((unit) => <option key={unit} value={unit}>{unit}</option>)}
             </select>
           </label>
         </div>
         <div className="flex justify-end gap-3 border-t border-slate-200 bg-slate-50 px-6 py-3">
           <button type="button" onClick={onClose} className="rounded-lg border border-slate-300 px-5 py-2 text-xs font-bold uppercase text-slate-700 hover:bg-white">Cancel</button>
-          <button type="submit" className="rounded-lg bg-[#17652a] px-5 py-2 text-xs font-bold uppercase text-white hover:bg-green-700">Add Personnel</button>
+          <button type="submit" disabled={saving} className="rounded-lg bg-[#17652a] px-5 py-2 text-xs font-bold uppercase text-white hover:bg-green-700 disabled:opacity-60">{saving ? 'Saving…' : 'Add Personnel'}</button>
         </div>
       </form>
     </div>
@@ -515,7 +559,8 @@ export default function MasterList() {
   const [search, setSearch] = useState('')
   const [selectedFilter, setSelectedFilter] = useState<HeadUnitFilter>('all')
   const [selected, setSelected] = useState<Personnel | null>(null)
-  const [people, setPeople] = useState<Personnel[]>(personnel)
+  const [people, setPeople] = useState<Personnel[]>([])
+  const [loadError, setLoadError] = useState('')
   const [showAddPersonnel, setShowAddPersonnel] = useState(false)
 
   const sections = useMemo(
@@ -523,6 +568,31 @@ export default function MasterList() {
     [people, search, selectedFilter],
   )
   const totalPersonnel = sections.reduce((sum, division) => sum + division.total, 0)
+
+  useEffect(() => {
+    const token = localStorage.getItem('masterlist-auth-token')
+    fetch('/api/personnel', { headers: token ? { Authorization: `Bearer ${token}` } : {} })
+      .then(async (response) => {
+        const data = await response.json() as Personnel[] | { message?: string }
+        if (!response.ok) throw new Error(!Array.isArray(data) ? data.message : 'Unable to load personnel.')
+        setPeople(data as Personnel[])
+        setLoadError('')
+      })
+      .catch((cause: unknown) => setLoadError(cause instanceof Error ? cause.message : 'Unable to load personnel.'))
+  }, [])
+
+  const addPersonnel = async (person: Personnel) => {
+    const token = localStorage.getItem('masterlist-auth-token')
+    const response = await fetch('/api/personnel', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      body: JSON.stringify(person),
+    })
+    const data = await response.json() as Personnel | { message?: string }
+    if (!response.ok) throw new Error('message' in data ? data.message : 'Unable to save personnel.')
+    setPeople((current) => [...current, data as Personnel])
+    setShowAddPersonnel(false)
+  }
 
   return (
     <section className="mx-auto max-w-[1600px]">
@@ -578,6 +648,7 @@ export default function MasterList() {
       </div>
 
       <div className="flex flex-col gap-10">
+        {loadError && <p role="alert" className="rounded-lg bg-red-50 p-4 text-sm text-red-700">{loadError}</p>}
         {sections.length > 0 ? (
           sections.map((division) => <DivisionCard key={division.title} {...division} onShow={setSelected} />)
         ) : (
@@ -595,10 +666,7 @@ export default function MasterList() {
       {selected && <PersonnelDetails person={selected} onClose={() => setSelected(null)} />}
       {showAddPersonnel && (
         <AddPersonnel
-          onAdd={(person) => {
-            setPeople((current) => [...current, person])
-            setShowAddPersonnel(false)
-          }}
+          onAdd={addPersonnel}
           onClose={() => setShowAddPersonnel(false)}
         />
       )}
